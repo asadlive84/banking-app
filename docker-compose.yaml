@@ -1,0 +1,81 @@
+services:
+  postgres:
+    image: postgres:13
+    container_name: postgres_db
+    restart: always
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: banking
+    ports:
+      - "5438:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - banking_network
+
+  mongodb:
+    image: mongo:5.0
+    container_name: mongodb
+    restart: always
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - banking_network
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: rabbitmq
+    restart: always
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      - RABBITMQ_DEFAULT_USER=guest
+      - RABBITMQ_DEFAULT_PASS=guest
+    healthcheck:
+      test: ["CMD", "rabbitmqctl", "status"]
+      interval: 5s
+      timeout: 10s
+      retries: 5
+    networks:
+      - banking_network
+
+  app:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    container_name: banking_app
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_started
+      mongodb:
+        condition: service_started
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      DATA_SOURCE_URL: "host=postgres user=user password=password dbname=banking port=5432 sslmode=disable TimeZone=UTC"
+      RABBIT_SOURCE_URL: "amqp://guest:guest@rabbitmq:5672/"
+      MONGO_SOURCE_URL: "mongodb://mongodb:27017"
+      APP_PORT: "8080"
+      
+    ports:
+      - "8080:8080"
+    volumes:
+      - .:/app
+    working_dir: /app
+    command: ["go", "run", "main.go"]
+    networks:
+      - banking_network
+
+networks:
+  banking_network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  mongo_data:
